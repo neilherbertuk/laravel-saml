@@ -94,6 +94,33 @@ return [
             //           Default value is the assertion consumer service URL (the base64 encoded SP url). 
             //           This is a bugfix for Nextcloud as SP and can be removed for normal SPs.
             'audience_restriction' => 'http://localhost/saml/idp/metadata',
+
+            // -----------------------------------------------------------
+            // The following settings are optional and are assigned per SP
+            // -----------------------------------------------------------
+
+            //OPTIONAL: Specify on a SP basis whether to forward roles to the SP
+            'forward_roles' => false,
+
+            //OPTIONAL: Override the default identifying field sent to the SP
+            //          name_id_type -  Can be any of the NAME_ID_ constants listed in \LightSaml\SamlConstants
+            //                          Defaults: 'NAME_ID_FORMAT_EMAIL'
+            //          name_id_field - The name of the attribute to retrieve from the User model ('email' would result in $user->email)
+            //                          Defaults: 'email'
+
+            'name_id_format' => 'NAME_ID_FORMAT_EMAIL',
+            'name_id_field' => 'email',
+
+            //OPTIONAL: Override the default set of user attributes passed to the SP
+            //          Provide an array where the key is a constant from \LightSaml\ClaimTypes
+            //          value is the attribute to retrieve from the User model ('name' would result in $user->name)
+            //          Default: ['EMAIL_ADDRESS' => 'email',
+            //                    'COMMON_NAME' => 'name']
+
+            'attributes' => [
+                'EMAIL_ADDRESS' => 'email',
+                'COMMON_NAME' => 'name',
+            ],
         ],
         
     ],

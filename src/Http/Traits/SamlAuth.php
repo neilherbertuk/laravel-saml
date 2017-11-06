@@ -147,80 +147,27 @@ trait SamlAuth
 
         $this->addRelayStateToResponse($response);
 
-        // We are responding with both the email and the username as attributes
-        // TODO: Add here other attributes, e.g. groups / roles / permissions
-        $roles = array();
-        if(\Auth::check()){
-            $user  = \Auth::user();
-            $email = $user->email;
-            $name  = $user->name;
-            if (config('saml.forward_roles'))
-                $roles = $user->roles->pluck('name')->all();
-        }else {
-            $email = $request['email'];
-            $name  = 'Place Holder';
-        }        
-        
         // Generate the SAML assertion for the response xml object
-        $assertion
-            ->setId(\LightSaml\Helper::generateID())
-            ->setIssueInstant(new \DateTime())
-            ->setIssuer(new \LightSaml\Model\Assertion\Issuer($issuer))
-            
-            ->setSubject(
-                    (new \LightSaml\Model\Assertion\Subject())
-                        ->setNameID(new \LightSaml\Model\Assertion\NameID(
-                            $email,
-                            \LightSaml\SamlConstants::NAME_ID_FORMAT_EMAIL
-                        ))
-                    ->addSubjectConfirmation(
-                            (new \LightSaml\Model\Assertion\SubjectConfirmation())
-                           ->setMethod(\LightSaml\SamlConstants::CONFIRMATION_METHOD_BEARER)
-                           ->setSubjectConfirmationData(
-                                    (new \LightSaml\Model\Assertion\SubjectConfirmationData())
-                                   ->setInResponseTo($authnRequest->getId())
-                                   ->setNotOnOrAfter(new \DateTime('+1 MINUTE'))
-                                   ->setRecipient($authnRequest->getAssertionConsumerServiceURL())
-                                )
-                        )
-                )
-                ->setConditions(
-                    (new \LightSaml\Model\Assertion\Conditions())
-                        ->setNotBefore(new \DateTime())
-                        ->setNotOnOrAfter(new \DateTime('+1 MINUTE'))
-                        ->addItem(
-                            new \LightSaml\Model\Assertion\AudienceRestriction([
-                                config('saml.sp.'.base64_encode($authnRequest->getAssertionConsumerServiceURL()).'.audience_restriction', 
-                                    $authnRequest->getAssertionConsumerServiceURL())])
-                        )
-                )
-            ->addItem(
-                    (new \LightSaml\Model\Assertion\AttributeStatement())
-                    ->addAttribute(new \LightSaml\Model\Assertion\Attribute(
-                            \LightSaml\ClaimTypes::EMAIL_ADDRESS,
-                            $email
-                        ))
-                    ->addAttribute(new \LightSaml\Model\Assertion\Attribute(
-                            \LightSaml\ClaimTypes::COMMON_NAME,
-                            $name
-                        ))
-                    ->addAttribute(new \LightSaml\Model\Assertion\Attribute(
-                            \LightSaml\ClaimTypes::ROLE,
-                            $roles
-                        ))
-                )
-            ->addItem(
-                    (new \LightSaml\Model\Assertion\AuthnStatement())
-                    ->setAuthnInstant(new \DateTime('-10 MINUTE'))
-                    ->setSessionIndex('_some_session_index')
-                    ->setAuthnContext(
-                            (new \LightSaml\Model\Assertion\AuthnContext())
-                           ->setAuthnContextClassRef(\LightSaml\SamlConstants::AUTHN_CONTEXT_PASSWORD_PROTECTED_TRANSPORT)
-                        )
-                )
-            ;
-            
-            // Send out the saml response
+        $this->assertId($assertion);
+
+        $this->assertIssueInstance($assertion);
+
+        $this->assertIssuer($assertion, $issuer);
+
+        $this->assertSubject($assertion, $authnRequest->getId(), $authnRequest->getAssertionConsumerServiceURL());
+
+        $this->assertConditions($assertion, $authnRequest->getAssertionConsumerServiceURL());
+
+        // Add AuthnStatement to Response
+        $this->assertAuthnStatement($assertion);
+
+        // Add Roles to Response
+        $this->assertRoles($assertion, $authnRequest->getAssertionConsumerServiceURL());
+
+        // Add Attributes to Response
+        $this->assertAttributes($assertion, $authnRequest->getAssertionConsumerServiceURL());
+
+        // Send out the saml response
             $this->sendSamlResponse($response);
     }
 
@@ -249,6 +196,137 @@ trait SamlAuth
         if (session()->has('RelayState')) {
             $response->setRelayState(session()->get('RelayState'));
             session()->remove('RelayState');
+        }
+    }
+
+    /**
+     * @param $assertion
+     */
+    protected function assertId($assertion)
+    {
+        $assertion->setId(\LightSaml\Helper::generateID());
+    }
+
+    /**
+     * @param $assertion
+     */
+    protected function assertIssueInstance($assertion)
+    {
+        $assertion->setIssueInstant(new \DateTime());
+    }
+
+    /**
+     * @param $assertion
+     * @param $issuer
+     */
+    protected function assertIssuer($assertion, $issuer)
+    {
+        $assertion->setIssuer(new \LightSaml\Model\Assertion\Issuer($issuer));
+    }
+
+    /**
+     * @param $assertion
+     * @param $id
+     * @param $sp
+     */
+    protected function assertSubject($assertion, $id, $sp)
+    {
+        $assertion->setSubject(
+            (new \LightSaml\Model\Assertion\Subject())
+                ->setNameID(new \LightSaml\Model\Assertion\NameID(
+                    \Auth::user()->{config('saml.sp.' . base64_encode($sp) . '.name_id_field', 'email')} ?: 'Unknown',
+                    constant("\LightSaml\SamlConstants::" . config('saml.sp.' . base64_encode($sp) . '.name_id_format', 'NAME_ID_FORMAT_EMAIL'))
+                ))
+                ->addSubjectConfirmation(
+                    (new \LightSaml\Model\Assertion\SubjectConfirmation())
+                        ->setMethod(\LightSaml\SamlConstants::CONFIRMATION_METHOD_BEARER)
+                        ->setSubjectConfirmationData(
+                            (new \LightSaml\Model\Assertion\SubjectConfirmationData())
+                                ->setInResponseTo($id)
+                                ->setNotOnOrAfter(new \DateTime('+1 MINUTE'))
+                                ->setRecipient($sp)
+                        )
+                )
+        );
+    }
+
+    /**
+     * @param $assertion
+     * @param $sp
+     */
+    protected function assertConditions($assertion, $sp)
+    {
+        $assertion->setConditions(
+            (new \LightSaml\Model\Assertion\Conditions())
+                ->setNotBefore(new \DateTime())
+                ->setNotOnOrAfter(new \DateTime('+1 MINUTE'))
+                ->addItem(
+                    new \LightSaml\Model\Assertion\AudienceRestriction([
+                        config('saml.sp.' . base64_encode($sp) . '.audience_restriction',
+                            $sp)])
+                )
+        );
+    }
+
+    /**
+     * @param $assertion
+     */
+    protected function assertAuthnStatement($assertion)
+    {
+        $assertion->addItem(
+            (new \LightSaml\Model\Assertion\AuthnStatement())
+                ->setAuthnInstant(new \DateTime('-10 MINUTE'))
+                ->setSessionIndex(session()->getId())
+                ->setAuthnContext(
+                    (new \LightSaml\Model\Assertion\AuthnContext())
+                        ->setAuthnContextClassRef(\LightSaml\SamlConstants::AUTHN_CONTEXT_PASSWORD_PROTECTED_TRANSPORT)
+                )
+        );
+    }
+
+    /**
+     * @param $assertion
+     * @param $sp
+     * @internal param $roles
+     */
+    protected function assertRoles($assertion, $sp)
+    {
+        if ($this->shouldForwardRoles($sp)) {
+            $assertion->addItem(
+                (new \LightSaml\Model\Assertion\AttributeStatement())
+                    ->addAttribute(new \LightSaml\Model\Assertion\Attribute(
+                        \LightSaml\ClaimTypes::ROLE,
+                        \Auth::user()->roles->pluck('name')->all() ?: array()
+                    ))
+            );
+        }
+    }
+
+    /**
+     * @param $sp
+     * @return \Illuminate\Config\Repository|mixed
+     */
+    protected function shouldForwardRoles($sp)
+    {
+        return config('saml.sp.' . base64_encode($sp) . '.forward_roles', config('saml.forward_roles'));
+    }
+
+    /**
+     * @param $assertion
+     * @param $sp
+     * @internal param $user
+     */
+    protected function assertAttributes($assertion, $sp)
+    {
+        $attributes = config('saml.sp.' . base64_encode($sp) . '.attributes', ['EMAIL_ADDRESS' => 'email', 'COMMON_NAME' => 'name',]);
+        foreach ($attributes as $key => $value) {
+            $assertion->addItem(
+                (new \LightSaml\Model\Assertion\AttributeStatement())
+                    ->addAttribute(new \LightSaml\Model\Assertion\Attribute(
+                        constant("\LightSaml\ClaimTypes::$key"),
+                        \Auth::user()->$value ?: 'Unknown'
+                    ))
+            );
         }
     }
 }
