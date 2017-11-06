@@ -48,9 +48,8 @@ class LaravelSamlServiceProvider extends ServiceProvider
             if (!file_exists(storage_path() . "/saml/idp")) {
                 mkdir(storage_path() . "/saml/idp", 0755, true);
             }
+            $this->registerCommands();
         }
-
-        $this->registerCommands();
     }
 
     /**
